@@ -1,3 +1,6 @@
+﻿*.exe
+*.exe~
+*.log
 deepseek-proxy
 deepseek
 cookies.json

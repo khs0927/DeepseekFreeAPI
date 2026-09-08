@@ -269,12 +269,17 @@ type ChatRequest struct {
 }
 
 // ThinkingRequested reports whether the client payload opted into thinking:
-// "reasoning": {"enabled": true} or any "reasoning_effort": "<string>".
+// "reasoning": {"enabled": true}, any "reasoning_effort": "<string>", or
+// when requesting a model designed for reasoning (e.g. deepseek-reasoner, deepseek-expert).
 func ThinkingRequested(req ChatRequest) bool {
 	if req.Reasoning != nil && req.Reasoning.Enabled {
 		return true
 	}
-	return req.ReasoningEffort != nil
+	if req.ReasoningEffort != nil {
+		return true
+	}
+	norm := strings.ToLower(strings.TrimSpace(req.Model))
+	return strings.Contains(norm, "reasoner") || strings.Contains(norm, "expert") || strings.Contains(norm, "pro")
 }
 
 func (s *ProxyServer) handleChat(w http.ResponseWriter, r *http.Request) {

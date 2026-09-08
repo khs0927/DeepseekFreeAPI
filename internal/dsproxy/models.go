@@ -36,16 +36,37 @@ type Model struct {
 // serves. Order defines the /v1/models listing order.
 var modelRegistry = []Model{
 	{
-		ID:             "deepseek-v4-flash",
+		ID:             "deepseek-chat",
 		Type:           ModelTypeDefault,
 		SupportsSearch: true,
 		SupportsThink:  true,
 		IsDefault:      true,
 	},
 	{
+		ID:             "deepseek-reasoner",
+		Type:           ModelTypeDefault,
+		SupportsSearch: false,
+		SupportsThink:  true,
+		IsDefault:      false,
+	},
+	{
+		ID:             "deepseek-expert",
+		Type:           ModelTypeDefault,
+		SupportsSearch: false,
+		SupportsThink:  true,
+		IsDefault:      false,
+	},
+	{
+		ID:             "deepseek-v4-flash",
+		Type:           ModelTypeDefault,
+		SupportsSearch: true,
+		SupportsThink:  true,
+		IsDefault:      false,
+	},
+	{
 		ID:             "deepseek-v4-pro",
-		Type:           ModelTypeExpert,
-		SupportsSearch: false, // pro is reasoning-only: no web search
+		Type:           ModelTypeDefault,
+		SupportsSearch: false,
 		SupportsThink:  true,
 		IsDefault:      false,
 	},
