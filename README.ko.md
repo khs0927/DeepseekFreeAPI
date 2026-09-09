@@ -99,8 +99,60 @@ OpenCode 또는 ZCode 설정 파일(`settings.json` 또는 UI 공급자 등록)�
 
 ---
 
+## 🍎 macOS 및 Linux 지원 & 부팅 시 자동 시작 (Auto-Start)
+
+### macOS / Linux 실행 및 관리
+```bash
+# 실행 권한 부여
+chmod +x *.sh
+
+# 서버 시작
+./start-deepseek.sh
+
+# 서버 중지
+./stop-deepseek.sh
+```
+
+### macOS 부팅/로그인 시 자동 실행 등록 (launchd)
+macOS 표준 백그라운드 서비스(`launchd`)로 등록되어 부팅 시 자동 실행됩니다:
+```bash
+# 자동 시작 등록 및 즉시 시작
+./register-startup.sh
+
+# 자동 시작 등록 해제
+./unregister-startup.sh
+```
+- 로그 위치: `~/Library/Logs/Antigravity/deepseek-bridge.log`
+
+### Windows 부팅 시 자동 시작 등록
+```powershell
+# Windows 시작프로그램 바로가기 등록 (백그라운드 최소화 실행)
+powershell -ExecutionPolicy Bypass -File .\register-startup.ps1
+
+# 시작프로그램 등록 해제
+powershell -ExecutionPolicy Bypass -File .\unregister-startup.ps1
+```
+
+---
+
+## ☁️ Doppler 클라우드 시크릿 자동 동기화
+
+Doppler 클라우드 금고에서 시크릿을 자동으로 내려받아 `.env`를 갱신합니다:
+```bash
+# 환경변수 DOPPLER_TOKEN 설정 또는 .doppler_token 파일 생성 후 실행
+# macOS / Linux
+./sync-doppler.sh
+
+# Windows
+sync-doppler.bat
+```
+- `start-deepseek.sh` 및 `start-deepseek.bat` 실행 시 자동으로 Doppler 동기화가 진행됩니다.
+
+---
+
 ## 🔒 깃허브 시크릿 (GitHub Secrets) 관리
 GitHub Actions 또는 워크플로우를 위해 토큰을 GitHub Secrets로 저장할 수 있습니다:
 - `DEEPSEEK_TOKEN`: DeepSeek 사용자 인증 토큰
 - `PROXY_API_KEY`: 로컬 인증 키 (`local-dev-token`)
 - `PORT`: `8000`
+

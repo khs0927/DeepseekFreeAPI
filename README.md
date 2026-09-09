@@ -101,6 +101,43 @@ API Key: `local-dev-token`
 
 ---
 
+## Cross-Platform Scripts & Auto-Start
+
+### macOS & Linux
+- **Start / Stop**:
+  ```bash
+  chmod +x *.sh
+  ./start-deepseek.sh
+  ./stop-deepseek.sh
+  ```
+- **macOS Auto-Start via launchd**:
+  ```bash
+  ./register-startup.sh    # Installs ~/Library/LaunchAgents/com.antigravity.deepseek-bridge.plist
+  ./unregister-startup.sh  # Removes LaunchAgent
+  ```
+  Logs: `~/Library/Logs/Antigravity/deepseek-bridge.log`
+
+### Windows
+- **Start / Stop**:
+  ```cmd
+  start-deepseek.bat
+  stop-deepseek.bat
+  ```
+- **Auto-Start at Logon**:
+  ```powershell
+  powershell -ExecutionPolicy Bypass -File .\register-startup.ps1
+  powershell -ExecutionPolicy Bypass -File .\unregister-startup.ps1
+  ```
+
+### Doppler Cloud Secret Auto-Sync
+If `DOPPLER_TOKEN` is exported or `.doppler_token` is present, secrets are automatically synchronized from Doppler vault (`free-api-bridges/prd`):
+- macOS / Linux: `./sync-doppler.sh`
+- Windows: `sync-doppler.bat`
+- `start-deepseek.sh` and `start-deepseek.bat` auto-trigger this before booting the bridge.
+
+---
+
 ## License
 
 MIT License
+

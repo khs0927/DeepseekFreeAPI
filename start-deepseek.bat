@@ -13,6 +13,11 @@ echo ========================================================
 set PORT=8000
 set PROXY_API_KEY=local-dev-token
 
+rem Automatic Doppler secret sync if configured
+if exist "%~dp0sync-doppler.bat" (
+    call "%~dp0sync-doppler.bat"
+)
+
 if exist "%~dp0deepseek-proxy.exe" (
     echo [INFO] Starting deepseek-proxy.exe...
     "%~dp0deepseek-proxy.exe" --agent-mode

@@ -1,4 +1,4 @@
-﻿*.exe
+*.exe
 *.exe~
 *.log
 deepseek-proxy
@@ -6,3 +6,5 @@ deepseek
 cookies.json
 reference/
 .env
+.doppler_token
+
