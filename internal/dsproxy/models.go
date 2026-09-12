@@ -51,7 +51,7 @@ var modelRegistry = []Model{
 	},
 	{
 		ID:             "deepseek-expert",
-		Type:           ModelTypeDefault,
+		Type:           ModelTypeExpert,
 		SupportsSearch: false,
 		SupportsThink:  true,
 		IsDefault:      false,
@@ -64,8 +64,22 @@ var modelRegistry = []Model{
 		IsDefault:      false,
 	},
 	{
-		ID:             "deepseek-v4-pro",
+		ID:             "deepseek-v4.1-flash",
 		Type:           ModelTypeDefault,
+		SupportsSearch: true,
+		SupportsThink:  true,
+		IsDefault:      false,
+	},
+	{
+		ID:             "deepseek-v4.1",
+		Type:           ModelTypeDefault,
+		SupportsSearch: true,
+		SupportsThink:  true,
+		IsDefault:      false,
+	},
+	{
+		ID:             "deepseek-v4-pro",
+		Type:           ModelTypeExpert,
 		SupportsSearch: false,
 		SupportsThink:  true,
 		IsDefault:      false,
@@ -103,6 +117,25 @@ func ResolveModel(id string) (Model, error) {
 	}
 	if m, ok := LookupModel(normalized); ok {
 		return m, nil
+	}
+	// Fallback/alias matching for common client variations
+	if strings.Contains(normalized, "reasoner") || strings.Contains(normalized, "r1") {
+		if m, ok := LookupModel("deepseek-reasoner"); ok {
+			return m, nil
+		}
+	}
+	if strings.Contains(normalized, "pro") {
+		if m, ok := LookupModel("deepseek-v4-pro"); ok {
+			return m, nil
+		}
+	}
+	if strings.Contains(normalized, "flash") || strings.Contains(normalized, "4.1") {
+		if m, ok := LookupModel("deepseek-v4.1-flash"); ok {
+			return m, nil
+		}
+	}
+	if strings.Contains(normalized, "chat") || strings.Contains(normalized, "v4") {
+		return DefaultModel(), nil
 	}
 	return Model{}, fmt.Errorf("unknown model %q (supported models: %s)",
 		id, strings.Join(SupportedModelIDs(), ", "))

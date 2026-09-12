@@ -8,3 +8,4 @@ reference/
 .env
 .doppler_token
 
+*.err
