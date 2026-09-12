@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"unicode/utf8"
 )
 
 // ============== AGENT MODE COMPATIBILITY ==============
@@ -968,11 +969,19 @@ func (in *AgentStreamInterceptor) drain(final bool) AgentParsedChunk {
 			// Hold back a window big enough for a fence line + partial marker
 			// so neither can leak as content while split across chunks. A
 			// marker reported incomplete keeps its bytes inside this window,
-			// so nothing here can be part of a future match.
+			// so nothing here can be part of a future match. The cut is
+			// backed up to a rune boundary so a multi-byte character is
+			// never split across emissions (preventing UTF-8 replacement-char garble).
 			const keep = agentStreamKeep
 			if len(rest) > keep {
-				content = append(content, rest[:len(rest)-keep])
-				in.offset = len(in.buffer) - keep
+				cut := len(rest) - keep
+				for cut > 0 && !utf8.RuneStart(rest[cut]) {
+					cut--
+				}
+				if cut > 0 {
+					content = append(content, rest[:cut])
+					in.offset += cut
+				}
 			}
 			break
 		}

@@ -457,3 +457,21 @@ func splitRunes(s string, n int) []string {
 	}
 	return out
 }
+
+func TestKoreanStreaming(t *testing.T) {
+	input := "안녕하세요! 무엇을 도와드릴까요? 파일 작업, 코드 분석, 질문 답변 등 원하시는 작업을 말씀해 주세요."
+	in := &AgentStreamInterceptor{}
+	var result strings.Builder
+	// Feed 1 rune at a time
+	for _, r := range input {
+		chunk := in.Feed(string(r))
+		result.WriteString(chunk.Content)
+	}
+	final := in.Finish()
+	result.WriteString(final.Content)
+	got := result.String()
+	if got != input {
+		t.Fatalf("mismatch:\ngot : %q\nwant: %q", got, input)
+	}
+}
+
