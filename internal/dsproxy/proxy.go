@@ -268,10 +268,13 @@ type ChatRequest struct {
 	Tools           []openAITool      `json:"tools,omitempty"`
 }
 
-// ThinkingRequested reports whether the client payload opted into thinking:
+// ThinkingRequested reports whether the client payload or model opted into thinking:
 // "reasoning": {"enabled": true}, any "reasoning_effort": "<string>", or
-// when requesting a model designed for reasoning (e.g. deepseek-reasoner, deepseek-expert).
-func ThinkingRequested(req ChatRequest) bool {
+// when requesting a model designed for reasoning (e.g. deepseek-reasoner, deepseek-deep-search).
+func ThinkingRequested(req ChatRequest, m Model) bool {
+	if m.DefaultThink {
+		return true
+	}
 	if req.Reasoning != nil && req.Reasoning.Enabled {
 		return true
 	}
@@ -279,7 +282,20 @@ func ThinkingRequested(req ChatRequest) bool {
 		return true
 	}
 	norm := strings.ToLower(strings.TrimSpace(req.Model))
-	return strings.Contains(norm, "reasoner") || strings.Contains(norm, "expert") || strings.Contains(norm, "pro")
+	return strings.Contains(norm, "reasoner") || strings.Contains(norm, "expert") || strings.Contains(norm, "pro") || strings.Contains(norm, "deep-search")
+}
+
+// SearchRequested reports whether the client payload or model opted into web search:
+// model has DefaultSearch, or payload has "search": true, or model name contains "search".
+func SearchRequested(req ChatRequest, m Model) bool {
+	if m.DefaultSearch {
+		return true
+	}
+	if req.Search {
+		return true
+	}
+	norm := strings.ToLower(strings.TrimSpace(req.Model))
+	return strings.Contains(norm, "search")
 }
 
 func (s *ProxyServer) handleChat(w http.ResponseWriter, r *http.Request) {
@@ -301,18 +317,17 @@ func (s *ProxyServer) handleChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	stream := body.Stream
-	// Thinking only turns on when explicitly requested via "reasoning" or
-	// "reasoning_effort"; the model name never implies it.
-	thinking := ThinkingRequested(body)
-	search := body.Search
+	thinking := ThinkingRequested(body, model)
+	search := SearchRequested(body, model)
 
 	prompt := ""
 	if agentMode {
 		// Agent mode folds every message plus the tool contract into one
-		// role-aware prompt so the model cannot silently use tools outside
-		// the caller's OpenAI tool contract (web search stays off).
+		// role-aware prompt.
 		prompt = buildAgentPrompt(body.Messages, body.Tools)
-		search = false
+		if len(body.Tools) > 0 && !SearchRequested(body, model) {
+			search = false
+		}
 		debugf("agent prompt (%d chars):\n%s", len(prompt), prompt)
 	} else if len(body.Messages) > 0 {
 		raw := body.Messages[len(body.Messages)-1].Content

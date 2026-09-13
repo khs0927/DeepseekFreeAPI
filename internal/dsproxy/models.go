@@ -29,6 +29,8 @@ type Model struct {
 	Type           ModelType // value sent upstream as "model_type"
 	SupportsSearch bool      // web search may be enabled on this model
 	SupportsThink  bool      // reasoning (thinking) may be enabled on this model
+	DefaultSearch  bool      // auto-enable web search for this model
+	DefaultThink   bool      // auto-enable reasoning (thinking) for this model
 	IsDefault      bool      // served when the request omits "model"
 }
 
@@ -40,20 +42,62 @@ var modelRegistry = []Model{
 		Type:           ModelTypeDefault,
 		SupportsSearch: true,
 		SupportsThink:  true,
+		DefaultSearch:  false,
+		DefaultThink:   false,
 		IsDefault:      true,
 	},
 	{
 		ID:             "deepseek-reasoner",
 		Type:           ModelTypeDefault,
-		SupportsSearch: false,
+		SupportsSearch: true,
 		SupportsThink:  true,
+		DefaultSearch:  false,
+		DefaultThink:   true,
+		IsDefault:      false,
+	},
+	{
+		ID:             "deepseek-search",
+		Type:           ModelTypeDefault,
+		SupportsSearch: true,
+		SupportsThink:  true,
+		DefaultSearch:  true,
+		DefaultThink:   false,
+		IsDefault:      false,
+	},
+	{
+		ID:             "deepseek-deep-search",
+		Type:           ModelTypeDefault,
+		SupportsSearch: true,
+		SupportsThink:  true,
+		DefaultSearch:  true,
+		DefaultThink:   true,
+		IsDefault:      false,
+	},
+	{
+		ID:             "deepseek-web-search",
+		Type:           ModelTypeDefault,
+		SupportsSearch: true,
+		SupportsThink:  true,
+		DefaultSearch:  true,
+		DefaultThink:   false,
+		IsDefault:      false,
+	},
+	{
+		ID:             "deepseek-reasoner-search",
+		Type:           ModelTypeDefault,
+		SupportsSearch: true,
+		SupportsThink:  true,
+		DefaultSearch:  true,
+		DefaultThink:   true,
 		IsDefault:      false,
 	},
 	{
 		ID:             "deepseek-expert",
 		Type:           ModelTypeExpert,
-		SupportsSearch: false,
+		SupportsSearch: true,
 		SupportsThink:  true,
+		DefaultSearch:  false,
+		DefaultThink:   true,
 		IsDefault:      false,
 	},
 	{
@@ -61,6 +105,8 @@ var modelRegistry = []Model{
 		Type:           ModelTypeDefault,
 		SupportsSearch: true,
 		SupportsThink:  true,
+		DefaultSearch:  false,
+		DefaultThink:   false,
 		IsDefault:      false,
 	},
 	{
@@ -68,6 +114,8 @@ var modelRegistry = []Model{
 		Type:           ModelTypeDefault,
 		SupportsSearch: true,
 		SupportsThink:  true,
+		DefaultSearch:  false,
+		DefaultThink:   false,
 		IsDefault:      false,
 	},
 	{
@@ -75,13 +123,17 @@ var modelRegistry = []Model{
 		Type:           ModelTypeDefault,
 		SupportsSearch: true,
 		SupportsThink:  true,
+		DefaultSearch:  false,
+		DefaultThink:   false,
 		IsDefault:      false,
 	},
 	{
 		ID:             "deepseek-v4-pro",
 		Type:           ModelTypeExpert,
-		SupportsSearch: false,
+		SupportsSearch: true,
 		SupportsThink:  true,
+		DefaultSearch:  false,
+		DefaultThink:   true,
 		IsDefault:      false,
 	},
 }

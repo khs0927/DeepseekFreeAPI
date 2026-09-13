@@ -484,16 +484,26 @@ func extractToolExchanges(messages []chatMessage) (old []toolExchange, recent []
 //	<current_task>       — the latest user message (recency anchor)
 //	<output_rules>       — final reminder at the very end (heaviest weight)
 func buildAgentPrompt(messages []chatMessage, tools []openAITool) string {
+	// If no tools are provided and there's only a single user message, return it directly
+	if len(tools) == 0 && len(messages) <= 1 {
+		if len(messages) == 1 {
+			return contentToText(messages[0].Content)
+		}
+		return ""
+	}
+
 	var b strings.Builder
 
-	// 1. System instructions (compact).
-	b.WriteString(agentSystemPrefix)
-	b.WriteString("\n\n")
+	if len(tools) > 0 {
+		// 1. System instructions (compact).
+		b.WriteString(agentSystemPrefix)
+		b.WriteString("\n\n")
 
-	// 2. Tool contract.
-	b.WriteString("<tools>\n")
-	b.WriteString(renderAgentTools(tools))
-	b.WriteString("\n</tools>\n\n")
+		// 2. Tool contract.
+		b.WriteString("<tools>\n")
+		b.WriteString(renderAgentTools(tools))
+		b.WriteString("\n</tools>\n\n")
+	}
 
 	// 3. Split messages into old (summarizable) and recent.
 	oldExchanges, recentMessages := extractToolExchanges(messages)
@@ -510,17 +520,15 @@ func buildAgentPrompt(messages []chatMessage, tools []openAITool) string {
 		b.WriteString("</recent>\n\n")
 	}
 
-	// 5. Anti-loop state: the deduplicated list of calls already made. Placed
-	//    late in the prompt (recency) so the model checks it against the
-	//    current task before emitting anything.
-	if already := agentAlreadyCalledList(messages); already != "" {
-		b.WriteString(already)
-		b.WriteString("\n\n")
+	if len(tools) > 0 {
+		// 5. Anti-loop state: the deduplicated list of calls already made.
+		if already := agentAlreadyCalledList(messages); already != "" {
+			b.WriteString(already)
+			b.WriteString("\n\n")
+		}
 	}
 
 	// 6. Extract the LAST user message as the explicit current task.
-	//    This is the most important change: the model knows exactly which
-	//    message to respond to.
 	lastUserIdx := -1
 	for i := len(messages) - 1; i >= 0; i-- {
 		if messages[i].Role == "user" {
@@ -531,14 +539,21 @@ func buildAgentPrompt(messages []chatMessage, tools []openAITool) string {
 	if lastUserIdx >= 0 {
 		text := contentToText(messages[lastUserIdx].Content)
 		if text != "" {
-			b.WriteString("<current_task>\n")
-			b.WriteString(text)
-			b.WriteString("\n</current_task>\n\n")
+			if len(tools) > 0 {
+				b.WriteString("<current_task>\n")
+				b.WriteString(text)
+				b.WriteString("\n</current_task>\n\n")
+			} else {
+				b.WriteString("\n")
+				b.WriteString(text)
+			}
 		}
 	}
 
-	// 7. Final output contract reminder (recency anchor).
-	b.WriteString(agentFinalReminder)
+	if len(tools) > 0 {
+		// 7. Final output contract reminder (recency anchor).
+		b.WriteString(agentFinalReminder)
+	}
 
 	return b.String()
 }
