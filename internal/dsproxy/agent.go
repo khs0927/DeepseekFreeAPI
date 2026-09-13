@@ -729,6 +729,10 @@ func SkipLeadingAgentFence(s string) int {
 	j := i + 3
 	if strings.HasPrefix(s[j:], "json") {
 		j += len("json")
+	} else if strings.HasPrefix(s[j:], "xml") {
+		j += len("xml")
+	} else if strings.HasPrefix(s[j:], "html") {
+		j += len("html")
 	}
 	for j < len(s) && (s[j] == ' ' || s[j] == '\t') {
 		j++
@@ -896,6 +900,18 @@ func ParseAgentToolCalls(text string) []map[string]any {
 			},
 		})
 	}
+	for _, span := range findDSMLSpans(text) {
+		for _, call := range span.calls {
+			calls = append(calls, map[string]any{
+				"id":   "call_" + randomHex(12),
+				"type": "function",
+				"function": map[string]any{
+					"name":      call.Name,
+					"arguments": call.Arguments,
+				},
+			})
+		}
+	}
 	return calls
 }
 
@@ -909,7 +925,21 @@ func StripAgentToolCalls(text string) string {
 		prev = span.end
 	}
 	kept.WriteString(text[prev:])
-	return strings.TrimSpace(kept.String())
+	res := kept.String()
+
+	dsmlSpans := findDSMLSpans(res)
+	if len(dsmlSpans) > 0 {
+		var kept2 strings.Builder
+		prev2 := 0
+		for _, span := range dsmlSpans {
+			kept2.WriteString(res[prev2:span.start])
+			prev2 = span.end
+		}
+		kept2.WriteString(res[prev2:])
+		res = kept2.String()
+	}
+
+	return strings.TrimSpace(res)
 }
 
 // ── streaming interceptor ────────────────────────────────────────────────────
@@ -971,8 +1001,10 @@ func (in *AgentStreamInterceptor) drain(final bool) AgentParsedChunk {
 		}
 
 		rest := in.buffer[in.offset:]
-		start, markerLen := findAgentMarker(rest, agentStartWord, final)
-		if start < 0 {
+		startTC, markerLenTC := findAgentMarker(rest, agentStartWord, final)
+		startDSML, markerLenDSML, isCalls := findDSMLStart(rest)
+
+		if startTC < 0 && startDSML < 0 {
 			if final {
 				// End of data: everything left is ordinary content.
 				if rest != "" {
@@ -982,12 +1014,8 @@ func (in *AgentStreamInterceptor) drain(final bool) AgentParsedChunk {
 				break
 			}
 			// Hold back a window big enough for a fence line + partial marker
-			// so neither can leak as content while split across chunks. A
-			// marker reported incomplete keeps its bytes inside this window,
-			// so nothing here can be part of a future match. The cut is
-			// backed up to a rune boundary so a multi-byte character is
-			// never split across emissions (preventing UTF-8 replacement-char garble).
-			const keep = agentStreamKeep
+			// so neither can leak as content while split across chunks.
+			const keep = 64
 			if len(rest) > keep {
 				cut := len(rest) - keep
 				for cut > 0 && !utf8.RuneStart(rest[cut]) {
@@ -1000,37 +1028,80 @@ func (in *AgentStreamInterceptor) drain(final bool) AgentParsedChunk {
 			}
 			break
 		}
-		if start > 0 {
-			piece := TrimTrailingAgentFence(rest[:start])
-			if piece != "" {
-				content = append(content, piece)
+
+		if startTC >= 0 && (startDSML < 0 || startTC <= startDSML) {
+			// TOOL_CALL marker comes first
+			if startTC > 0 {
+				piece := TrimTrailingAgentFence(rest[:startTC])
+				if piece != "" {
+					content = append(content, piece)
+				}
+				in.offset += startTC
 			}
-			in.offset += start
-		}
-		bodyStart := in.offset + markerLen
-		idx, endMarkerLen := findAgentMarker(in.buffer[bodyStart:], agentEndWord, final)
-		if idx < 0 {
-			break // incomplete block: wait for more chunks
-		}
-		end := bodyStart + idx
-		raw := strings.TrimSpace(in.buffer[bodyStart:end])
-		if name, args, ok := agentLooseParse(raw); ok && name != "" {
-			toolCalls = append(toolCalls, map[string]any{
-				"index": in.callIndex,
-				"id":    "call_" + randomHex(12),
-				"type":  "function",
-				"function": map[string]any{
-					"name":      name,
-					"arguments": agentStreamArguments(args),
-				},
-			})
-			in.callIndex++
+			bodyStart := in.offset + markerLenTC
+			idx, endMarkerLen := findAgentMarker(in.buffer[bodyStart:], agentEndWord, final)
+			if idx < 0 {
+				break // incomplete block: wait for more chunks
+			}
+			end := bodyStart + idx
+			raw := strings.TrimSpace(in.buffer[bodyStart:end])
+			if name, args, ok := agentLooseParse(raw); ok && name != "" {
+				toolCalls = append(toolCalls, map[string]any{
+					"index": in.callIndex,
+					"id":    "call_" + randomHex(12),
+					"type":  "function",
+					"function": map[string]any{
+						"name":      name,
+						"arguments": agentStreamArguments(args),
+					},
+				})
+				in.callIndex++
+			} else {
+				// invalid model block: leave it as visible text
+				content = append(content, in.buffer[in.offset:end+endMarkerLen])
+			}
+			in.offset = end + endMarkerLen
+			in.pendingSep = true // watch for a ``` fence right after the block
 		} else {
-			// invalid model block: leave it as visible text
-			content = append(content, in.buffer[in.offset:end+endMarkerLen])
+			// DSML marker comes first
+			if startDSML > 0 {
+				piece := TrimTrailingAgentFence(rest[:startDSML])
+				if piece != "" {
+					content = append(content, piece)
+				}
+				in.offset += startDSML
+			}
+			bodyStart := in.offset + markerLenDSML
+			idx, endMarkerLen := findDSMLEnd(in.buffer[bodyStart:], isCalls)
+			if idx < 0 {
+				if !final {
+					break // incomplete block: wait for more chunks
+				}
+				idx = len(in.buffer) - bodyStart
+				endMarkerLen = 0
+			}
+			end := bodyStart + idx
+			blockText := in.buffer[in.offset : end+endMarkerLen]
+			parsedCalls := parseDSMLInvokes(blockText)
+			if len(parsedCalls) > 0 {
+				for _, call := range parsedCalls {
+					toolCalls = append(toolCalls, map[string]any{
+						"index": in.callIndex,
+						"id":    "call_" + randomHex(12),
+						"type":  "function",
+						"function": map[string]any{
+							"name":      call.Name,
+							"arguments": call.Arguments,
+						},
+					})
+					in.callIndex++
+				}
+			} else {
+				content = append(content, blockText)
+			}
+			in.offset = end + endMarkerLen
+			in.pendingSep = true
 		}
-		in.offset = end + endMarkerLen
-		in.pendingSep = true // watch for a ``` fence right after the block
 	}
 	return AgentParsedChunk{Content: strings.Join(content, ""), ToolCalls: toolCalls}
 }
