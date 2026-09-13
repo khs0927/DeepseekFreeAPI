@@ -586,19 +586,19 @@ func parseStreamData(data map[string]any, st *streamState) ([]Chunk, bool, error
 			return chunks, false, nil
 		}
 		// The tail fragment switched kind (e.g. THINKING -> RESPONSE).
-		if op == "SET" && path == "response/fragments/-1/type" {
+		if (op == "SET" || op == "") && (path == "response/fragments/-1/type" || strings.HasSuffix(path, "/type")) {
 			st.tailFragType = strVal(data, "v")
 			return chunks, false, nil
 		}
-		if op == "APPEND" && path == "response/fragments/-1/content" {
+		if (op == "APPEND" || op == "" || op == "SET") && (path == "response/fragments/-1/content" || (strings.HasPrefix(path, "response/fragments/") && strings.HasSuffix(path, "/content"))) {
 			if v, ok := data["v"].(string); ok {
 				chunks = append(chunks, Chunk{Type: chunkTypeForFrag(st.tailFragType), Content: v})
 			}
-		} else if op == "APPEND" && path == "response/content" {
+		} else if (op == "APPEND" || op == "" || op == "SET") && path == "response/content" {
 			if v, ok := data["v"].(string); ok {
 				chunks = append(chunks, Chunk{Type: "content", Content: v})
 			}
-		} else if op == "SET" && path == "response/status" {
+		} else if (op == "SET" || op == "") && path == "response/status" {
 			if v, ok := data["v"].(string); ok {
 				chunks = append(chunks, Chunk{Type: "status", Status: v})
 				if v == "FINISHED" {
@@ -612,8 +612,12 @@ func parseStreamData(data map[string]any, st *streamState) ([]Chunk, bool, error
 					if !ok {
 						continue
 					}
-					if operation["p"] == "response/status" && operation["v"] == "FINISHED" {
-						chunks = append(chunks, Chunk{Type: "status", Status: "FINISHED"})
+					batchChunks, batchComplete, err := parseStreamData(operation, st)
+					if err != nil {
+						return nil, false, err
+					}
+					chunks = append(chunks, batchChunks...)
+					if batchComplete {
 						complete = true
 					}
 				}

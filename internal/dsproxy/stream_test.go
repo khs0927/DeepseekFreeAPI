@@ -112,3 +112,27 @@ func TestParseTailFragmentTypeSwitch(t *testing.T) {
 		t.Errorf("content = %q, want %q", got, "final")
 	}
 }
+
+// TestParseStreamDataTolerantPatchEvents ensures that patch events omitting "o"
+// (e.g. {"p":"response/fragments/-1/content","v":"녕"}) or nested in "BATCH"
+// are properly parsed and not dropped.
+func TestParseStreamDataTolerantPatchEvents(t *testing.T) {
+	chunks := feedEvents(t, []string{
+		`{"request_message_id":1,"response_message_id":2,"model_type":"expert"}`,
+		`{"v":{"response":{"message_id":2,"role":"ASSISTANT","thinking_enabled":true,"status":"WIP","fragments":[{"id":2,"type":"THINK","content":"생각"}]}}}`,
+		`{"p":"response/fragments/-1/content","o":"APPEND","v":" 중"}`,
+		`{"p":"response/fragments","o":"APPEND","v":[{"id":3,"type":"RESPONSE","content":"안"}]}`,
+		`{"p":"response/fragments/-1/content","v":"녕"}`, // missing "o" field! Must not be dropped!
+		`{"v":"하"}`,
+		`{"v":"세요"}`,
+		`{"p":"response","o":"BATCH","v":[{"p":"response/fragments/-1/content","v":"!"},{"p":"response/status","v":"FINISHED"}]}`,
+	})
+
+	if got := chunkText(chunks, "content"); got != "안녕하세요!" {
+		t.Errorf("content = %q, want %q", got, "안녕하세요!")
+	}
+	if got := chunkText(chunks, "reasoning"); got != "생각 중" {
+		t.Errorf("reasoning = %q, want %q", got, "생각 중")
+	}
+}
+

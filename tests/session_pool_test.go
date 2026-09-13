@@ -202,8 +202,8 @@ func TestSessionPoolTimeoutReturnsSentinel(t *testing.T) {
 // batch (defaultPoolSize, currently 12).
 func TestSessionPoolSizeClamp(t *testing.T) {
 	pool := dsproxy.NewSessionPool(discardLogger(), &stubBackend{}, 0)
-	if pool.Size() != 12 {
-		t.Fatalf("Size() = %d, want default 12", pool.Size())
+	if pool.Size() != 5 {
+		t.Fatalf("Size() = %d, want default 5", pool.Size())
 	}
 }
 

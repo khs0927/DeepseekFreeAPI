@@ -18,7 +18,7 @@ func TestThinkingRequested(t *testing.T) {
 		want bool
 	}{
 		{"plain request stays off", `{"model":"deepseek-chat","messages":[]}`, false},
-		{"model name never implies thinking", `{"model":"deepseek-reasoner"}`, false},
+		{"reasoner model enables thinking", `{"model":"deepseek-reasoner"}`, true},
 		{"legacy thinking flag ignored", `{"thinking":true}`, false},
 		{"legacy deepThink flag ignored", `{"deepThink":true}`, false},
 		{"reasoning enabled true toggles on", `{"reasoning":{"enabled":true}}`, true},
@@ -36,20 +36,25 @@ func TestThinkingRequested(t *testing.T) {
 			if err := json.Unmarshal([]byte(tc.body), &req); err != nil {
 				t.Fatalf("unmarshal %s: %v", tc.body, err)
 			}
-			if got := dsproxy.ThinkingRequested(req); got != tc.want {
+			if got := dsproxy.ThinkingRequested(req, dsproxy.Model{}); got != tc.want {
 				t.Fatalf("ThinkingRequested(%s) = %v, want %v", tc.body, got, tc.want)
 			}
 		})
 	}
 }
 
-// TestProxyModelsHasNoReasoner verifies the deepseek-reasoner entry was
-// removed from the advertised model list.
-func TestProxyModelsHasNoReasoner(t *testing.T) {
+// TestProxyModelsHasReasoner verifies the deepseek-reasoner entry is
+// present in the advertised model list.
+func TestProxyModelsHasReasoner(t *testing.T) {
+	found := false
 	for _, m := range dsproxy.ProxyModels {
 		if id, _ := m["id"].(string); id == "deepseek-reasoner" {
-			t.Fatal("deepseek-reasoner must be removed from ProxyModels")
+			found = true
+			break
 		}
+	}
+	if !found {
+		t.Fatal("deepseek-reasoner must be present in ProxyModels")
 	}
 }
 
