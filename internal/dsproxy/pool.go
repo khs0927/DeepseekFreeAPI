@@ -82,6 +82,7 @@ type SessionPool struct {
 	log     *log.Logger
 	backend SessionBackend
 	size    int
+	reuse   bool // when true, healthy sessions return to ready queue instead of deleting/refilling
 
 	ready chan string // buffered with size; members are unused, clean sessions
 
@@ -90,6 +91,12 @@ type SessionPool struct {
 	stopped  atomic.Bool
 
 	wg sync.WaitGroup // outstanding create/delete operations
+}
+
+// SetReuse toggles whether healthy sessions are recycled back into the ready
+// queue rather than being deleted and recreated on every request.
+func (p *SessionPool) SetReuse(reuse bool) {
+	p.reuse = reuse
 }
 
 // NewSessionPool builds a pool that keeps size sessions ready. size < 1 is
@@ -148,24 +155,55 @@ func (p *SessionPool) Acquire(ctx context.Context, wait time.Duration) (string, 
 	}
 }
 
-// Release retires a consumed session. It is called only after the response
-// has been fully written and processed (or definitively failed), so the
-// session is never yanked out from under an in-flight completion: first the
-// used session is deleted upstream, then a replacement is created right away
-// to fill the gap in the batch. Both steps run in the background.
+// Release returns a session to the pool (or retires it if reuse is disabled).
 func (p *SessionPool) Release(sessionID string) {
+	p.ReleaseWithStatus(sessionID, true)
+}
+
+// ReleaseWithStatus returns healthy sessions to the ready queue when reuse is
+// enabled, or discards and refills errored/retired sessions.
+func (p *SessionPool) ReleaseWithStatus(sessionID string, ok bool) {
 	if sessionID == "" {
 		return
 	}
-	p.wg.Add(1)
-	go func() {
-		defer p.wg.Done()
-		p.deleteOne(sessionID, "used")
-		if p.stopped.Load() {
-			return // shutting down: retire only, don't rebuild the batch
-		}
-		p.fillSlot("refill")
-	}()
+	if p.stopped.Load() {
+		p.wg.Add(1)
+		go func() {
+			defer p.wg.Done()
+			p.deleteOne(sessionID, "shutdown")
+		}()
+		return
+	}
+
+	if !ok || !p.reuse {
+		// Session failed or reuse disabled: delete upstream and refill slot
+		p.wg.Add(1)
+		go func() {
+			defer p.wg.Done()
+			reason := "used"
+			if !ok {
+				reason = "error"
+			}
+			p.deleteOne(sessionID, reason)
+			if !p.stopped.Load() {
+				p.fillSlot("refill")
+			}
+		}()
+		return
+	}
+
+	// Reuse enabled and session is healthy: recycle back into ready queue
+	select {
+	case p.ready <- sessionID:
+		debugf("[pool] recycled session %s (%d/%d ready)", sessionID, len(p.ready), p.size)
+	default:
+		// Pool already full; retire excess session
+		p.wg.Add(1)
+		go func() {
+			defer p.wg.Done()
+			p.deleteOne(sessionID, "excess")
+		}()
+	}
 }
 
 // Shutdown gracefully clears the pool (the CTRL+C path): refills are

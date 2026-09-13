@@ -82,8 +82,9 @@ func Run() {
 			proxy.poolWait = 0 // 0 => wait indefinitely for a pooled session
 		}
 		pool = NewSessionPool(logger, &lazyBackend{s: proxy}, poolSize)
+		pool.SetReuse(true)
 		proxy.AttachSessionPool(pool)
-		logger.Printf("  Mode      : async (pre-made session batch x%d, history=false only)", pool.Size())
+		logger.Printf("  Mode      : async (pre-made session batch x%d, recycled sessions, history=false only)", pool.Size())
 		logger.Printf("              SESSION_POOL_SIZE=%d SESSION_ACQUIRE_TIMEOUT=%ds", pool.Size(), waitSecs)
 	}
 

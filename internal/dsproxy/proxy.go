@@ -431,47 +431,37 @@ func (s *ProxyServer) handleChat(w http.ResponseWriter, r *http.Request) {
 		ModelType:       string(model.Type),
 	}
 
+	var chatErr error
 	if stream {
-		s.streamResponse(w, r, api, params, model.ID)
+		chatErr = s.streamResponse(w, r, api, params, model.ID)
 	} else {
-		s.blockResponse(w, r, api, params, model.ID)
+		chatErr = s.blockResponse(w, r, api, params, model.ID)
 	}
 
 	// Session retirement: in history=false mode the session was used only
-	// for this one request. Once the response has been fully written (or the
-	// upstream definitively failed) it will never be referenced again.
+	// for this one request.
 	//
-	// Async mode: pool-owned sessions are retired through the pool, which
-	// deletes the consumed session upstream and immediately creates a
-	// replacement so the standing batch refills. Sessions handed out while
-	// the batch was busy (created on demand) and sync-mode sessions keep the
-	// legacy fire-and-forget GC path.
+	// Async mode: pool-owned sessions are returned to the pool (or retired if errored).
 	if !useHistory && chatID != "" {
 		if pooled {
-			s.pool.Release(chatID)
+			s.pool.ReleaseWithStatus(chatID, chatErr == nil)
 		} else {
 			s.gcSessions("stateless", chatID)
 		}
 	}
 }
 
-func (s *ProxyServer) streamResponse(w http.ResponseWriter, r *http.Request, api *DeepSeekAPI, params ChatParams, model string) {
+func (s *ProxyServer) streamResponse(w http.ResponseWriter, r *http.Request, api *DeepSeekAPI, params ChatParams, model string) error {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		writeError(w, "Streaming unsupported", "server_error", nil, 500)
-		return
+		return errors.New("streaming unsupported")
 	}
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Connection", "close")
-	if debugMode {
-		debugDumpClientResponse(200, w.Header())
-	}
-	w.WriteHeader(200)
 
 	rid := "chatcmpl-" + randomHex(16)
 	created := time.Now().Unix()
 
+	headerSent := false
 	sse := func(obj map[string]any) bool {
 		raw, err := json.Marshal(obj)
 		if err != nil {
@@ -485,15 +475,27 @@ func (s *ProxyServer) streamResponse(w http.ResponseWriter, r *http.Request, api
 		return true
 	}
 
+	sendHeader := func() {
+		if headerSent {
+			return
+		}
+		headerSent = true
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.Header().Set("Cache-Control", "no-cache")
+		w.Header().Set("Connection", "close")
+		if debugMode {
+			debugDumpClientResponse(200, w.Header())
+		}
+		w.WriteHeader(200)
+		sse(contentChunkRole(rid, created, model))
+	}
+
 	contentChunk := func(text string, finish any) map[string]any {
 		return map[string]any{
 			"id": rid, "object": "chat.completion.chunk", "created": created, "model": model,
 			"choices": []any{map[string]any{"index": 0, "delta": map[string]any{"content": text}, "finish_reason": finish}},
 		}
 	}
-
-	// role-establishing chunk (required by most clients)
-	sse(contentChunkRole(rid, created, model))
 
 	// agent mode: incrementally split model text from tool-call blocks
 	var interceptor *AgentStreamInterceptor
@@ -505,67 +507,110 @@ func (s *ProxyServer) streamResponse(w http.ResponseWriter, r *http.Request, api
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
 
-	err := api.ChatCompletion(ctx, params, func(ch Chunk) bool {
-		if ch.Type == "ready" && s.getUseHistory() && ch.ResponseMessageID != nil {
-			s.setHistPar(ch.ResponseMessageID)
-		}
-		// Thinking deltas ride alongside content as reasoning_content,
-		// matching DeepSeek's own OpenAI-compatible field name.
-		if ch.Type == "reasoning" && ch.Content != "" {
-			if !sse(map[string]any{
-				"id": rid, "object": "chat.completion.chunk", "created": created, "model": model,
-				"choices": []any{map[string]any{"index": 0, "delta": map[string]any{"reasoning_content": ch.Content}, "finish_reason": nil}},
-			}) {
-				return true
+	doChat := func() error {
+		return api.ChatCompletion(ctx, params, func(ch Chunk) bool {
+			if ch.Type == "ready" && s.getUseHistory() && ch.ResponseMessageID != nil {
+				s.setHistPar(ch.ResponseMessageID)
 			}
-			return false
-		}
-		if ch.Type != "content" || ch.Content == "" {
-			return false
-		}
-		if interceptor != nil {
-			parsed := interceptor.Feed(ch.Content)
-			if parsed.Content != "" && !sse(contentChunk(parsed.Content, nil)) {
-				return true
-			}
-			for _, call := range parsed.ToolCalls {
-				emittedToolCall = true
-				debugf("agent tool call #%d: %s(%s)", call["index"], call["function"].(map[string]any)["name"], call["function"].(map[string]any)["arguments"])
+			// Thinking deltas ride alongside content as reasoning_content,
+			// matching DeepSeek's own OpenAI-compatible field name.
+			if ch.Type == "reasoning" && ch.Content != "" {
+				sendHeader()
 				if !sse(map[string]any{
 					"id": rid, "object": "chat.completion.chunk", "created": created, "model": model,
-					"choices": []any{map[string]any{"index": 0, "delta": map[string]any{"tool_calls": []any{call}}, "finish_reason": nil}},
+					"choices": []any{map[string]any{"index": 0, "delta": map[string]any{"reasoning_content": ch.Content}, "finish_reason": nil}},
 				}) {
 					return true
 				}
+				return false
 			}
-			return false
+			if ch.Type != "content" || ch.Content == "" {
+				return false
+			}
+			if interceptor != nil {
+				parsed := interceptor.Feed(ch.Content)
+				if parsed.Content != "" {
+					sendHeader()
+					if !sse(contentChunk(parsed.Content, nil)) {
+						return true
+					}
+				}
+				for _, call := range parsed.ToolCalls {
+					emittedToolCall = true
+					sendHeader()
+					debugf("agent tool call #%d: %s(%s)", call["index"], call["function"].(map[string]any)["name"], call["function"].(map[string]any)["arguments"])
+					if !sse(map[string]any{
+						"id": rid, "object": "chat.completion.chunk", "created": created, "model": model,
+						"choices": []any{map[string]any{"index": 0, "delta": map[string]any{"tool_calls": []any{call}}, "finish_reason": nil}},
+					}) {
+						return true
+					}
+				}
+				return false
+			}
+			sendHeader()
+			return !sse(contentChunk(ch.Content, nil))
+		})
+	}
+
+	err := doChat()
+	if err != nil && !headerSent {
+		var rateErr RateLimitError
+		if errors.As(err, &rateErr) {
+			s.log.Printf("[RateLimit] Upstream rate limit reached, retrying in 2s...")
+			select {
+			case <-time.After(2 * time.Second):
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+			err = doChat()
 		}
-		return !sse(contentChunk(ch.Content, nil))
-	})
+	}
 
 	if err != nil {
-		etype, _ := errorType(err)
-		sse(map[string]any{"error": map[string]any{"message": err.Error(), "type": etype}})
-		return
+		etype, status := errorType(err)
+		code := "api_error"
+		if status == 429 {
+			code = "rate_limit_exceeded"
+		}
+		if !headerSent {
+			writeError(w, err.Error(), etype, code, status)
+			return err
+		}
+		sse(map[string]any{
+			"error": map[string]any{
+				"message":   err.Error(),
+				"type":      etype,
+				"code":      code,
+				"status":    status,
+				"retryable": status == 429 || status >= 500,
+			},
+		})
+		return err
 	}
 
 	if interceptor != nil {
 		final := interceptor.Finish()
-		if final.Content != "" && !sse(contentChunk(final.Content, nil)) {
-			return
+		if final.Content != "" {
+			sendHeader()
+			if !sse(contentChunk(final.Content, nil)) {
+				return nil
+			}
 		}
 		for _, call := range final.ToolCalls {
 			emittedToolCall = true
+			sendHeader()
 			debugf("agent tool call #%d: %s(%s) [final]", call["index"], call["function"].(map[string]any)["name"], call["function"].(map[string]any)["arguments"])
 			if !sse(map[string]any{
 				"id": rid, "object": "chat.completion.chunk", "created": created, "model": model,
 				"choices": []any{map[string]any{"index": 0, "delta": map[string]any{"tool_calls": []any{call}}, "finish_reason": nil}},
 			}) {
-				return
+				return nil
 			}
 		}
 	}
 
+	sendHeader()
 	finishReason := "stop"
 	if emittedToolCall {
 		finishReason = "tool_calls"
@@ -576,6 +621,7 @@ func (s *ProxyServer) streamResponse(w http.ResponseWriter, r *http.Request, api
 	})
 	w.Write([]byte("data: [DONE]\n\n"))
 	flusher.Flush()
+	return nil
 }
 
 // contentChunkRole is the role-establishing first SSE chunk (required by most
@@ -587,28 +633,50 @@ func contentChunkRole(rid string, created int64, model string) map[string]any {
 	}
 }
 
-func (s *ProxyServer) blockResponse(w http.ResponseWriter, r *http.Request, api *DeepSeekAPI, params ChatParams, model string) {
+func (s *ProxyServer) blockResponse(w http.ResponseWriter, r *http.Request, api *DeepSeekAPI, params ChatParams, model string) error {
 	ctx := r.Context()
 	var parts []string
 	var reasoning []string
 
-	err := api.ChatCompletion(ctx, params, func(ch Chunk) bool {
-		if ch.Type == "ready" && s.getUseHistory() && ch.ResponseMessageID != nil {
-			s.setHistPar(ch.ResponseMessageID)
+	doChat := func() error {
+		parts = nil
+		reasoning = nil
+		return api.ChatCompletion(ctx, params, func(ch Chunk) bool {
+			if ch.Type == "ready" && s.getUseHistory() && ch.ResponseMessageID != nil {
+				s.setHistPar(ch.ResponseMessageID)
+			}
+			switch {
+			case ch.Type == "content" && ch.Content != "":
+				parts = append(parts, ch.Content)
+			case ch.Type == "reasoning" && ch.Content != "":
+				reasoning = append(reasoning, ch.Content)
+			}
+			return false
+		})
+	}
+
+	err := doChat()
+	if err != nil {
+		var rateErr RateLimitError
+		if errors.As(err, &rateErr) {
+			s.log.Printf("[RateLimit] Upstream rate limit reached, retrying in 2s...")
+			select {
+			case <-time.After(2 * time.Second):
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+			err = doChat()
 		}
-		switch {
-		case ch.Type == "content" && ch.Content != "":
-			parts = append(parts, ch.Content)
-		case ch.Type == "reasoning" && ch.Content != "":
-			reasoning = append(reasoning, ch.Content)
-		}
-		return false
-	})
+	}
 
 	if err != nil {
 		etype, status := errorType(err)
-		writeError(w, err.Error(), etype, nil, status)
-		return
+		code := "api_error"
+		if status == 429 {
+			code = "rate_limit_exceeded"
+		}
+		writeError(w, err.Error(), etype, code, status)
+		return err
 	}
 
 	answer := strings.Join(parts, "")
@@ -649,6 +717,7 @@ func (s *ProxyServer) blockResponse(w http.ResponseWriter, r *http.Request, api 
 			"total_tokens":      promptTokens + completionTokens,
 		},
 	})
+	return nil
 }
 
 // ── helpers ──────────────────────────────────────────────────────────────────

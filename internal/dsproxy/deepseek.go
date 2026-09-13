@@ -495,8 +495,13 @@ func parseStreamData(data map[string]any, st *streamState) ([]Chunk, bool, error
 		if msg == "" {
 			msg = "upstream error event"
 		}
-		if finish := strVal(data, "finish_reason"); finish != "" {
+		finish := strVal(data, "finish_reason")
+		if finish != "" {
 			msg = fmt.Sprintf("%s (finish_reason=%s)", msg, finish)
+		}
+		low := strings.ToLower(msg)
+		if finish == "rate_limit_reached" || strings.Contains(low, "messages too frequent") || strings.Contains(low, "rate limit") {
+			return nil, false, RateLimitError{Msg: msg}
 		}
 		return nil, false, APIError{Msg: msg}
 	}
