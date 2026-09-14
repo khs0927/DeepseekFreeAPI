@@ -48,7 +48,7 @@ var modelRegistry = []Model{
 	},
 	{
 		ID:             "deepseek-reasoner",
-		Type:           ModelTypeExpert,
+		Type:           ModelTypeDefault,
 		SupportsSearch: true,
 		SupportsThink:  true,
 		DefaultSearch:  false,
@@ -66,73 +66,10 @@ var modelRegistry = []Model{
 	},
 	{
 		ID:             "deepseek-deep-search",
-		Type:           ModelTypeExpert,
-		SupportsSearch: true,
-		SupportsThink:  true,
-		DefaultSearch:  true,
-		DefaultThink:   true,
-		IsDefault:      false,
-	},
-	{
-		ID:             "deepseek-web-search",
 		Type:           ModelTypeDefault,
 		SupportsSearch: true,
 		SupportsThink:  true,
 		DefaultSearch:  true,
-		DefaultThink:   false,
-		IsDefault:      false,
-	},
-	{
-		ID:             "deepseek-reasoner-search",
-		Type:           ModelTypeExpert,
-		SupportsSearch: true,
-		SupportsThink:  true,
-		DefaultSearch:  true,
-		DefaultThink:   true,
-		IsDefault:      false,
-	},
-	{
-		ID:             "deepseek-expert",
-		Type:           ModelTypeExpert,
-		SupportsSearch: true,
-		SupportsThink:  true,
-		DefaultSearch:  false,
-		DefaultThink:   true,
-		IsDefault:      false,
-	},
-	{
-		ID:             "deepseek-v4-flash",
-		Type:           ModelTypeDefault,
-		SupportsSearch: true,
-		SupportsThink:  true,
-		DefaultSearch:  false,
-		DefaultThink:   false,
-		IsDefault:      false,
-	},
-	{
-		ID:             "deepseek-v4.1-flash",
-		Type:           ModelTypeDefault,
-		SupportsSearch: true,
-		SupportsThink:  true,
-		DefaultSearch:  false,
-		DefaultThink:   false,
-		IsDefault:      false,
-	},
-	{
-		ID:             "deepseek-v4.1",
-		Type:           ModelTypeDefault,
-		SupportsSearch: true,
-		SupportsThink:  true,
-		DefaultSearch:  false,
-		DefaultThink:   false,
-		IsDefault:      false,
-	},
-	{
-		ID:             "deepseek-v4-pro",
-		Type:           ModelTypeExpert,
-		SupportsSearch: true,
-		SupportsThink:  true,
-		DefaultSearch:  false,
 		DefaultThink:   true,
 		IsDefault:      false,
 	},
@@ -171,22 +108,29 @@ func ResolveModel(id string) (Model, error) {
 		return m, nil
 	}
 	// Fallback/alias matching for common client variations
-	if strings.Contains(normalized, "reasoner") || strings.Contains(normalized, "r1") {
+	if (strings.Contains(normalized, "reasoner") && strings.Contains(normalized, "search")) ||
+		strings.Contains(normalized, "deep-search") ||
+		strings.Contains(normalized, "r1-search") ||
+		strings.Contains(normalized, "think-search") {
+		if m, ok := LookupModel("deepseek-deep-search"); ok {
+			return m, nil
+		}
+	}
+	if strings.Contains(normalized, "reasoner") || strings.Contains(normalized, "r1") ||
+		strings.Contains(normalized, "think") || strings.Contains(normalized, "pro") ||
+		strings.Contains(normalized, "expert") {
 		if m, ok := LookupModel("deepseek-reasoner"); ok {
 			return m, nil
 		}
 	}
-	if strings.Contains(normalized, "pro") {
-		if m, ok := LookupModel("deepseek-v4-pro"); ok {
+	if strings.Contains(normalized, "search") {
+		if m, ok := LookupModel("deepseek-search"); ok {
 			return m, nil
 		}
 	}
-	if strings.Contains(normalized, "flash") || strings.Contains(normalized, "4.1") {
-		if m, ok := LookupModel("deepseek-v4.1-flash"); ok {
-			return m, nil
-		}
-	}
-	if strings.Contains(normalized, "chat") || strings.Contains(normalized, "v4") {
+	if strings.Contains(normalized, "chat") || strings.Contains(normalized, "flash") ||
+		strings.Contains(normalized, "4.1") || strings.Contains(normalized, "v4") ||
+		strings.Contains(normalized, "v3") || normalized == "deepseek" {
 		return DefaultModel(), nil
 	}
 	return Model{}, fmt.Errorf("unknown model %q (supported models: %s)",

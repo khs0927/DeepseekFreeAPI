@@ -29,13 +29,21 @@
 
 ## 📋 지원 모델 목록 (포트 8000)
 
-| 모델 ID | 유형 (Type) | 웹 검색 | 사고/추론 (Think) | 기본값 | 설명 |
+DeepSeek 공식 웹사이트(`chat.deepseek.com`) 하단의 두 가지 핵심 토글인 **깊은 생각 (DeepThink)**과 **검색 (Web Search)**의 조합에 대응하는 **4가지 핵심 모델**을 제공합니다:
+
+| 모델 ID | 웹 토글 대응 모드 | 웹 검색 | 사고/추론 (Think) | 기본값 | 설명 |
 | :--- | :--- | :---: | :---: | :---: | :--- |
-| `deepseek-chat` | `default` | O | O | **기본 모델** | 고속 일반 대화 및 코딩 지원 |
-| `deepseek-reasoner` | `default` | X | O (자동) | - | 심층 사고(`reasoning_content`) 모델 |
-| `deepseek-expert` | `default` | X | O (자동) | - | 고급 전문가 추론 모델 |
-| `deepseek-v4-flash` | `default` | O | O | - | v4 플래시 모델 |
-| `deepseek-v4-pro` | `default` | X | O | - | v4 프로 추론 모델 |
+| `deepseek-chat` | 기본 모드 (깊은생각 OFF, 검색 OFF) | X | X | **기본 모델** | 고속 일반 대화 및 코딩 지원 (DeepSeek-V3) |
+| `deepseek-reasoner` | 깊은생각 모드 (깊은생각 ON, 검색 OFF) | X | **O (자동)** | - | 심층 사고/추론(`reasoning_content`) 모델 (DeepSeek-R1) |
+| `deepseek-search` | 검색 모드 (깊은생각 OFF, 검색 ON) | **O** | X | - | 실시간 웹 검색 지원 모델 |
+| `deepseek-deep-search` | 깊은생각 + 검색 모드 (깊은생각 ON, 검색 ON) | **O** | **O (자동)** | - | 심층 사고 + 실시간 웹 검색 결합 모델 |
+
+### 하위 호환 별칭 (Aliases)
+기존에 사용하던 레거시 모델명은 4대 모드로 자동 변환되어 에러 없이 정상 작동합니다:
+- `deepseek-reasoner-search`, `deepseek-r1-search`, `deepseek-think-search` → `deepseek-deep-search`
+- `deepseek-r1`, `deepseek-think`, `deepseek-expert`, `deepseek-v4-pro` → `deepseek-reasoner`
+- `deepseek-web-search` → `deepseek-search`
+- `deepseek-v4-flash`, `deepseek-v4.1-flash`, `deepseek-v4.1`, `deepseek-v3`, `deepseek` → `deepseek-chat`
 
 ---
 
@@ -97,7 +105,8 @@ OpenCode 또는 ZCode 설정 파일(`settings.json` 또는 UI 공급자 등록)�
   "models": [
     "deepseek-chat",
     "deepseek-reasoner",
-    "deepseek-expert"
+    "deepseek-search",
+    "deepseek-deep-search"
   ]
 }
 ```

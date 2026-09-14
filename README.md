@@ -37,13 +37,21 @@
 
 ## Supported Models (Port 8000)
 
-| Model ID | Backend Type | Search | Thinking | Default | Notes |
+DeepSeek's web interface (`chat.deepseek.com`) features two core toggle buttons: **DeepThink** (`thinking_enabled`) and **Web Search** (`search_enabled`). These produce exactly **4 operational modes**:
+
+| Model ID | Web Toggle Equivalent | Search | DeepThink | Default | Notes |
 | :--- | :--- | :---: | :---: | :---: | :--- |
-| `deepseek-chat` | `default` | Yes | Yes | **Default** | Fast general chat and coding |
-| `deepseek-reasoner` | `default` | No | Yes (auto) | - | Returns `reasoning_content` |
-| `deepseek-expert` | `default` | No | Yes (auto) | - | Expert reasoning model |
-| `deepseek-v4-flash` | `default` | Yes | Yes | - | V4 Flash model |
-| `deepseek-v4-pro` | `default` | No | Yes (auto) | - | V4 Pro reasoning model |
+| `deepseek-chat` | Default (DeepThink OFF, Search OFF) | No | No | **Default** | Fast general chat and coding (DeepSeek-V3) |
+| `deepseek-reasoner` | DeepThink ON, Search OFF | No | **Yes** | - | Deep reasoning model (DeepSeek-R1) |
+| `deepseek-search` | DeepThink OFF, Search ON | **Yes** | No | - | Real-time web search enabled |
+| `deepseek-deep-search` | DeepThink ON, Search ON | **Yes** | **Yes** | - | Deep reasoning + live web search |
+
+### Backwards-Compatible Aliases
+Legacy model names automatically resolve to the canonical 4 modes:
+- `deepseek-reasoner-search`, `deepseek-r1-search`, `deepseek-think-search` → `deepseek-deep-search`
+- `deepseek-r1`, `deepseek-think`, `deepseek-expert`, `deepseek-v4-pro` → `deepseek-reasoner`
+- `deepseek-web-search` → `deepseek-search`
+- `deepseek-v4-flash`, `deepseek-v4.1-flash`, `deepseek-v4.1`, `deepseek-v3`, `deepseek` → `deepseek-chat`
 
 ---
 
@@ -97,7 +105,8 @@ API Key: `local-dev-token`
   "models": [
     "deepseek-chat",
     "deepseek-reasoner",
-    "deepseek-expert"
+    "deepseek-search",
+    "deepseek-deep-search"
   ]
 }
 ```

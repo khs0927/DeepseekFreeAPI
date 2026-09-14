@@ -159,7 +159,7 @@ const agentSystemPrefix = "<system>\n" +
 	"REPLY FORMAT \u2014 exactly ONE of:\n" +
 	"(A) TOOL CALL: <<<TOOL_CALL>>>" + agentCallSchema + "<<<END_TOOL_CALL>>> \u2014 nothing before or after.\n" +
 	"    The JSON object has EXACTLY two keys: \"name\" (the tool to call, spelled exactly as in <tools>) and \"arguments\" (an object with ONLY that tool's parameters).\n" +
-	"(B) FINAL ANSWER: plain text, only when no tool applies.\n" +
+	"(B) FINAL ANSWER: plain text. When answering user questions, explanations, conversational/reasoning tasks, or when the task is done, think deeply and provide a thorough, helpful response in natural language.\n" +
 	"\n" +
 	"RULES:\n" +
 	"- Never announce plans (\u201cI\u2019ll...\u201d, \u201cLet me...\u201d). Emit the block \u2014 that IS the action.\n" +
@@ -178,7 +178,7 @@ const agentSystemPrefix = "<system>\n" +
 const agentFinalReminder = `<output_rules>
 RESPOND WITH EXACTLY ONE OF:
 1. <<<TOOL_CALL>>>{"name":"<tool_name>","arguments":{...}}<<<END_TOOL_CALL>>> (no fences, no other text)
-2. Plain text final answer (only if no tool applies to this step)
+2. Plain text final answer (think deeply and respond thoroughly when no tool applies or task is done)
 The tool-call JSON uses EXACTLY the keys "name" and "arguments" — never a "tool" key, never bare top-level parameters.
 NO REPEATS: a call already listed in <already_called> must not be re-issued. Same step answered? Move on or answer in plain text.
 </output_rules>`

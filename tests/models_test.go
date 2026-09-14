@@ -49,19 +49,27 @@ func TestRegistryPinsModels(t *testing.T) {
 	}
 
 	reasoner := mustModel(t, "deepseek-reasoner")
-	if reasoner.Type != dsproxy.ModelTypeExpert {
-		t.Errorf("reasoner model_type = %q, want \"expert\"", reasoner.Type)
+	if reasoner.Type != dsproxy.ModelTypeDefault {
+		t.Errorf("reasoner model_type = %q, want \"default\"", reasoner.Type)
 	}
-	if !reasoner.SupportsThink {
-		t.Error("reasoner must support reasoning")
+	if !reasoner.SupportsThink || !reasoner.DefaultThink {
+		t.Error("reasoner must support and default to reasoning")
 	}
 
-	pro := mustModel(t, "deepseek-v4-pro")
-	if pro.Type != dsproxy.ModelTypeExpert {
-		t.Errorf("pro model_type = %q, want \"expert\"", pro.Type)
+	search := mustModel(t, "deepseek-search")
+	if search.Type != dsproxy.ModelTypeDefault {
+		t.Errorf("search model_type = %q, want \"default\"", search.Type)
 	}
-	if !pro.SupportsThink {
-		t.Error("pro must support reasoning")
+	if !search.SupportsSearch || !search.DefaultSearch {
+		t.Error("search must support and default to search")
+	}
+
+	deepSearch := mustModel(t, "deepseek-deep-search")
+	if deepSearch.Type != dsproxy.ModelTypeDefault {
+		t.Errorf("deepSearch model_type = %q, want \"default\"", deepSearch.Type)
+	}
+	if !deepSearch.DefaultThink || !deepSearch.DefaultSearch {
+		t.Error("deepSearch must default to both think and search")
 	}
 }
 
@@ -71,18 +79,21 @@ func TestResolveModel(t *testing.T) {
 	if m := mustModel(t, ""); m.ID != "deepseek-chat" {
 		t.Errorf("empty model must resolve to the default, got %q", m.ID)
 	}
-	if m := mustModel(t, "  DeepSeek-V4-Pro  "); m.ID != "deepseek-v4-pro" {
-		t.Errorf("matching must be case-insensitive/trimmed, got %q", m.ID)
+	if m := mustModel(t, "  DeepSeek-V4-Pro  "); m.ID != "deepseek-reasoner" {
+		t.Errorf("DeepSeek-V4-Pro alias must resolve to deepseek-reasoner, got %q", m.ID)
 	}
 	if m := mustModel(t, "deepseek-reasoner"); m.ID != "deepseek-reasoner" {
 		t.Errorf("deepseek-reasoner should resolve, got %q", m.ID)
+	}
+	if m := mustModel(t, "deepseek-reasoner-search"); m.ID != "deepseek-deep-search" {
+		t.Errorf("deepseek-reasoner-search should resolve to deepseek-deep-search, got %q", m.ID)
 	}
 
 	_, err := dsproxy.ResolveModel("nonexistent-model-xyz")
 	if err == nil {
 		t.Fatal("unknown model must return error")
 	}
-	for _, want := range []string{"deepseek-chat", "deepseek-reasoner", "deepseek-v4-pro"} {
+	for _, want := range []string{"deepseek-chat", "deepseek-reasoner", "deepseek-search", "deepseek-deep-search"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error %q must mention %q", err.Error(), want)
 		}
@@ -105,7 +116,15 @@ func TestValidateCapabilities(t *testing.T) {
 // TestProxyModelsAdvertisesRegistry verifies /v1/models data is generated
 // from the registry.
 func TestProxyModelsAdvertisesRegistry(t *testing.T) {
-	want := map[string]bool{"deepseek-chat": false, "deepseek-reasoner": false, "deepseek-v4-pro": false}
+	want := map[string]bool{
+		"deepseek-chat":        false,
+		"deepseek-reasoner":    false,
+		"deepseek-search":      false,
+		"deepseek-deep-search": false,
+	}
+	if len(dsproxy.ProxyModels) != 4 {
+		t.Errorf("expected exactly 4 models in /v1/models, got %d", len(dsproxy.ProxyModels))
+	}
 	for _, m := range dsproxy.ProxyModels {
 		id, _ := m["id"].(string)
 		if _, ok := want[id]; ok {
@@ -226,7 +245,7 @@ func TestModelsEndpointListsNewRegistry(t *testing.T) {
 	for _, m := range resp.Data {
 		ids[m.ID] = true
 	}
-	if !ids["deepseek-chat"] || !ids["deepseek-reasoner"] || !ids["deepseek-v4-pro"] {
-		t.Fatalf("/v1/models must list registered models, got %v", ids)
+	if !ids["deepseek-chat"] || !ids["deepseek-reasoner"] || !ids["deepseek-search"] || !ids["deepseek-deep-search"] {
+		t.Fatalf("/v1/models must list the 4 canonical models, got %v", ids)
 	}
 }
