@@ -1,6 +1,7 @@
 package dsproxy
 
 import (
+	"bytes"
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
@@ -79,8 +80,10 @@ func applyDotEnv(path string) bool {
 	if err != nil {
 		return false
 	}
+	raw = bytes.TrimPrefix(raw, []byte("\xef\xbb\xbf"))
 	for _, line := range strings.Split(string(raw), "\n") {
 		line = strings.TrimSpace(line)
+		line = strings.TrimPrefix(line, "\ufeff")
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
@@ -89,7 +92,7 @@ func applyDotEnv(path string) bool {
 		if !ok {
 			continue
 		}
-		key = strings.TrimSpace(key)
+		key = strings.TrimSpace(strings.TrimPrefix(key, "\ufeff"))
 		value = strings.TrimSpace(value)
 		if len(value) >= 2 {
 			if (value[0] == '"' && value[len(value)-1] == '"') ||

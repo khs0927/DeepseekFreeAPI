@@ -36,7 +36,8 @@ powershell -ExecutionPolicy Bypass -Command ^
     "            $port = ($lines | Where-Object { $_ -match '^(DEEPSEEK_PORT|PORT)=' } | Select-Object -First 1) -replace '^[A-Z_]+=[\"''\s]*','' -replace '[\"''\s]*$','';" ^
     "            if (-not $proxy) { $proxy = 'local-dev-token' };" ^
     "            if (-not $port) { $port = '8000' };" ^
-    "            \"PORT=$port`r`nPROXY_API_KEY=$proxy`r`nDEEPSEEK_TOKEN=$ds`r`n\" | Set-Content -Path '.env' -Encoding utf8;" ^
+    "            $utf8NoBom = New-Object System.Text.UTF8Encoding($false);" ^
+    "            [System.IO.File]::WriteAllText('.env', \"PORT=$port`r`nPROXY_API_KEY=$proxy`r`nDEEPSEEK_TOKEN=$ds`r`n\", $utf8NoBom);" ^
     "            Write-Output '[SUCCESS] Updated .env from Doppler (%PROJECT%/%CONFIG%)';" ^
     "            exit 0;" ^
     "        }" ^

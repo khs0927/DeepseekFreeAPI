@@ -226,6 +226,13 @@ func (c *DeepSeekAPI) makeRequest(ctx context.Context, method, endpoint string, 
 		if err := json.Unmarshal(respBody, &parsed); err != nil {
 			return nil, APIError{Msg: "Invalid JSON response from server"}
 		}
+		if code, ok := parsed["code"].(float64); ok && code != 0 {
+			msg, _ := parsed["msg"].(string)
+			if int(code) == 40003 || int(code) == 40001 || int(code) == 40005 {
+				return nil, AuthenticationError{Msg: fmt.Sprintf("DeepSeek Auth Error (%d): %s (Please update DEEPSEEK_TOKEN in .env)", int(code), msg)}
+			}
+			return nil, APIError{Msg: fmt.Sprintf("DeepSeek API error (%d): %s", int(code), msg), StatusCode: int(code)}
+		}
 		return parsed, nil
 	}
 
