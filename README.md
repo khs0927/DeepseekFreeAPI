@@ -22,12 +22,15 @@
   - `deepseek-reasoner` (thinking/reasoning enabled, returns `reasoning_content`)
   - `deepseek-expert` (expert thinking enabled)
   - `deepseek-v4-flash`, `deepseek-v4-pro`
-- **Anti-Ban Architecture**:
-  - **Zero file uploads**: Never touches `/api/v0/file/upload`, which triggers bot detection. Uses clean inline payloads.
-  - **Session garbage collector**: Deletes throwaway chat sessions on DeepSeek (`POST /chat_session/delete`) immediately after response completion so session IDs never accumulate on the account.
+- **Anti-Ban Strict Architecture**:
+  - **Zero file uploads**: Never touches `/api/v0/file/upload`, which triggers bot detection and account mutes (`biz_code: 5, user is muted`). All payloads send `"ref_file_ids": []`.
+  - **Session recycling & garbage collector**: Recycles healthy sessions (`pool.SetReuse(true)`) to avoid rate limit spikes, and purges throwaway sessions upstream (`POST /chat_session/delete`) so dead sessions never pile up on the account.
+  - **Explicit auth error reporting**: Accurately intercepts upstream `code: 40003` to report `DeepSeek Auth Error (40003): Authorization Failed (Please update DEEPSEEK_TOKEN in .env)`.
+  - **UTF-8 BOM resilience**: Automatically detects and trims UTF-8 BOM (`\xef\xbb\xbf` / `\ufeff`) from `.env` files written on Windows PowerShell.
+  - **No raw special tokens**: Replaces raw special tokens with clean XML-sectioned prompt shims (`<system>`, `<tools>`, `<current_task>`, `<output_rules>`).
   - **Chrome 149 / Web client 2.4.0 fingerprinting**: Full compliance with the official web client protocol.
 - **Async session-pool mode (default)**: Pre-warms 5 sessions so completion requests never wait on per-request session creation.
-- **Agent mode** (`--agent-mode` / `AGENT_MODE=true`): OpenAI function/tool calling translated into clean role-tagged prompt shims.
+- **Agent mode** (`--agent-mode` / `AGENT_MODE=true`): OpenAI tools and DeepSeek DSML tool tags (`<<<TOOL_CALL>>>` and `<tool_call>`) translated into native OpenAI streaming tool_calls.
 - **Automatic .env loading**: Automatically loads `.env` from the project or binary directory.
 
 ---

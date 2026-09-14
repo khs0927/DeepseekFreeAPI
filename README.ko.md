@@ -8,16 +8,21 @@
 
 - **순수 Go 구현 (Zero Dependency)**: 외부 파이썬이나 CGo 의존성 없이 단일 실행 파일(`.exe`)로 동작합니다.
 - **클라우드플레어(Cloudflare) 우회 및 내장 WASM PoW 솔버**: `wazero` WebAssembly 런타임을 통해 DeepSeek의 `DeepSeekHashV1` 작업증명(Challenge)을 브라우저와 동일하게 실시간으로 풀어냅니다.
-- **계정 차단 방지 (Anti-Ban Guardrails)**:
-  - **파일 업로드 API 전면 배제**: 계정 차단의 주원인인 비정상 파일 업로드(`/api/v0/file/upload`)를 일체 호출하지 않고 `ref_file_ids: []`로 안전하게 인라인 처리합니다.
-  - **Throwaway 세션 자동 파기 (GC)**: 요청이 완료되는 즉시 DeepSeek 서버에서 해당 세션을 백그라운드로 자동 삭제(`POST /chat_session/delete`)하여 계정에 비정상적인 세션이 누적되지 않습니다.
+- **계정 차단 방지 철통 보호 (Anti-Ban Strict Guardrails)**:
+  - **파일 업로드 API 전면 배제 (Zero File Upload)**: 계정 즉시 정지/뮤트(`biz_code: 5, user is muted`)의 주원인인 `/api/v0/file/upload`를 일체 호출하지 않으며, 모든 요청에 `"ref_file_ids": []`를 안전하게 전송합니다.
+  - **세션 리사이클링 및 쓰레기 수거 (GC)**:
+    - 정상 세션은 세션 풀(`pool.SetReuse(true)`)로 재활용하여 초당/분당 수십 번의 세션 생성을 유발하지 않아 429 속도 제한 및 이상 트래픽 탐지를 회피합니다.
+    - 각 요청은 `parent_message_id: nil`로 격리되며, 에러 발생 또는 서버 종료 시 `POST /chat_session/delete`를 통해 계정 내 잔여 세션을 완전히 파기합니다.
+  - **정확한 토큰 만료 진단**: DeepSeek 서버가 HTTP 200과 함께 `code: 40003` 반환 시 모호한 에러 대신 `DeepSeek Auth Error (40003): Authorization Failed`를 명시적으로 출력하여 즉각적인 토큰 갱신을 유도합니다.
+  - **UTF-8 BOM 자동 제거**: Windows PowerShell `Set-Content`로 작성된 `.env`의 UTF-8 BOM(`\xef\xbb\xbf`)을 감지하여 안전하게 제거합니다.
+  - **특수 토큰 유출 방지**: `<|begin_of_sentence|>` 등 원시 탈옥 토큰 대신 XML 구조화 프롬프트 딤(`agent_mode`)을 사용하여 업스트림 필터 오작동을 차단합니다.
   - **최신 브라우저 규격 헤더**: Chrome 149 기반 핑거프린트(`x-client-version: 2.4.0`)를 사용하여 정상적인 브라우저 웹 사용자로 인식됩니다.
 - **사전 예열 세션 풀 (Async Session Pool)**:
   - 백그라운드에서 5개의 세션을 미리 준비하여 요청 즉시 2~3초 내로 응답합니다.
   - 세션이 소모되면 즉시 자동 보충됩니다.
 - **에이전트 모드 지원 (`--agent-mode`)**:
-  - OpenAI 표준 함수 호출(Function Calling / Tools)을 자연어 에이전트 규약으로 완벽하게 번역합니다.
-  - 모델의 사고 과정(`reasoning_content`) 및 도구 호출 결과를 자동 파싱합니다.
+  - OpenAI 표준 함수 호출(Function Calling / Tools) 및 DeepSeek 고유 DSML 태그(`<<<TOOL_CALL>>>` 및 `<tool_call>`)를 표준 OpenAI `tool_calls` 델타로 자동 변환합니다.
+  - 모델의 사고 과정(`reasoning_content`) 및 도구 호출 결과를 실시간 SSE 스트리밍으로 전달합니다.
 - **환경변수(.env) 자동 로드**: 작업 디렉터리 또는 실행 파일 옆의 `.env` 파일을 자동으로 감지하여 로드합니다.
 
 ---
