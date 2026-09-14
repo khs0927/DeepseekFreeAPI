@@ -109,3 +109,41 @@ func applyDotEnv(path string) bool {
 	}
 	return true
 }
+
+// ReloadDotEnv unconditionally reloads and overwrites environment variables from .env
+func ReloadDotEnv() {
+	paths := []string{".env"}
+	if exe, err := os.Executable(); err == nil {
+		if dir := filepath.Dir(exe); dir != "" {
+			paths = append(paths, filepath.Join(dir, ".env"))
+		}
+	}
+	for _, path := range paths {
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+		for _, line := range strings.Split(string(raw), "\n") {
+			line = strings.TrimSpace(line)
+			if line == "" || strings.HasPrefix(line, "#") {
+				continue
+			}
+			line = strings.TrimPrefix(line, "export ")
+			key, value, ok := strings.Cut(line, "=")
+			if !ok {
+				continue
+			}
+			key = strings.TrimSpace(key)
+			value = strings.TrimSpace(value)
+			if len(value) >= 2 {
+				if (value[0] == '"' && value[len(value)-1] == '"') ||
+					(value[0] == '\'' && value[len(value)-1] == '\'') {
+					value = value[1 : len(value)-1]
+				}
+			}
+			if key != "" {
+				_ = os.Setenv(key, value)
+			}
+		}
+	}
+}

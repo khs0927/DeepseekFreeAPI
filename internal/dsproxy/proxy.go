@@ -226,6 +226,10 @@ func (s *ProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			s.setUseHistory(enabled)
 			writeJSON(w, http.StatusOK, map[string]any{"use_history": enabled})
 			return
+		case "/reload":
+			ok := s.AutoRefreshTokens()
+			writeJSON(w, http.StatusOK, map[string]any{"reloaded": ok})
+			return
 		case "/v1/chat/completions", "/chat/completions":
 			s.handleChat(w, r)
 			return
@@ -306,6 +310,17 @@ func (s *ProxyServer) handleChat(w http.ResponseWriter, r *http.Request) {
 	}
 	if debugMode {
 		debugDumpClientRequest(r, rawBody)
+	}
+
+	// Gateway: Direct GLM routing if GLM model requested
+	normModel := strings.ToLower(strings.TrimSpace(body.Model))
+	if strings.HasPrefix(normModel, "glm") || strings.Contains(normModel, "preview") {
+		s.log.Printf("[Gateway] Direct GLM model requested: %s", body.Model)
+		if err := s.ForwardToGLM(w, r, rawBody, body.Model); err == nil {
+			return
+		}
+		s.log.Printf("[Gateway] Direct GLM failed, falling back to DeepSeek...")
+		body.Model = "deepseek-chat"
 	}
 
 	// Resolve the requested model against the registry. The model is real
@@ -433,9 +448,9 @@ func (s *ProxyServer) handleChat(w http.ResponseWriter, r *http.Request) {
 
 	var chatErr error
 	if stream {
-		chatErr = s.streamResponse(w, r, api, params, model.ID)
+		chatErr = s.streamResponse(w, r, api, params, model.ID, rawBody)
 	} else {
-		chatErr = s.blockResponse(w, r, api, params, model.ID)
+		chatErr = s.blockResponse(w, r, api, params, model.ID, rawBody)
 	}
 
 	// Session retirement: in history=false mode the session was used only
@@ -451,7 +466,7 @@ func (s *ProxyServer) handleChat(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (s *ProxyServer) streamResponse(w http.ResponseWriter, r *http.Request, api *DeepSeekAPI, params ChatParams, model string) error {
+func (s *ProxyServer) streamResponse(w http.ResponseWriter, r *http.Request, api *DeepSeekAPI, params ChatParams, model string, rawBody []byte) error {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		writeError(w, "Streaming unsupported", "server_error", nil, 500)
@@ -555,6 +570,19 @@ func (s *ProxyServer) streamResponse(w http.ResponseWriter, r *http.Request, api
 
 	err := doChat()
 	if err != nil && !headerSent {
+		var authErr AuthenticationError
+		if errors.As(err, &authErr) || strings.Contains(err.Error(), "invalid token") || strings.Contains(err.Error(), "40003") {
+			s.log.Printf("[AuthError] DeepSeek token expired (%v). Proactively auto-refreshing...", err)
+			if s.AutoRefreshTokens() {
+				if newAPI, getErr := s.getAPI(); getErr == nil {
+					api = newAPI
+					err = doChat()
+				}
+			}
+		}
+	}
+
+	if err != nil && !headerSent {
 		var rateErr RateLimitError
 		if errors.As(err, &rateErr) {
 			s.log.Printf("[RateLimit] Upstream rate limit reached, retrying in 2s...")
@@ -565,6 +593,15 @@ func (s *ProxyServer) streamResponse(w http.ResponseWriter, r *http.Request, api
 			}
 			err = doChat()
 		}
+	}
+
+	if err != nil && !headerSent {
+		s.log.Printf("[Failover] DeepSeek failed (%v). Failing over to GLM Free API (port 3101)...", err)
+		if fallbackErr := s.ForwardToGLM(w, r, rawBody, "glm-5.3-flash"); fallbackErr == nil {
+			s.log.Printf("[Failover] Successfully served completion via GLM fallback!")
+			return nil
+		}
+		s.log.Printf("[Failover] GLM fallback also failed: %v", err)
 	}
 
 	if err != nil {
@@ -633,7 +670,7 @@ func contentChunkRole(rid string, created int64, model string) map[string]any {
 	}
 }
 
-func (s *ProxyServer) blockResponse(w http.ResponseWriter, r *http.Request, api *DeepSeekAPI, params ChatParams, model string) error {
+func (s *ProxyServer) blockResponse(w http.ResponseWriter, r *http.Request, api *DeepSeekAPI, params ChatParams, model string, rawBody []byte) error {
 	ctx := r.Context()
 	var parts []string
 	var reasoning []string
@@ -657,6 +694,19 @@ func (s *ProxyServer) blockResponse(w http.ResponseWriter, r *http.Request, api 
 
 	err := doChat()
 	if err != nil {
+		var authErr AuthenticationError
+		if errors.As(err, &authErr) || strings.Contains(err.Error(), "invalid token") || strings.Contains(err.Error(), "40003") {
+			s.log.Printf("[AuthError] DeepSeek token expired (%v). Proactively auto-refreshing...", err)
+			if s.AutoRefreshTokens() {
+				if newAPI, getErr := s.getAPI(); getErr == nil {
+					api = newAPI
+					err = doChat()
+				}
+			}
+		}
+	}
+
+	if err != nil {
 		var rateErr RateLimitError
 		if errors.As(err, &rateErr) {
 			s.log.Printf("[RateLimit] Upstream rate limit reached, retrying in 2s...")
@@ -667,6 +717,15 @@ func (s *ProxyServer) blockResponse(w http.ResponseWriter, r *http.Request, api 
 			}
 			err = doChat()
 		}
+	}
+
+	if err != nil {
+		s.log.Printf("[Failover] DeepSeek failed (%v). Failing over to GLM Free API (port 3101)...", err)
+		if fallbackErr := s.ForwardToGLM(w, r, rawBody, "glm-5.3-flash"); fallbackErr == nil {
+			s.log.Printf("[Failover] Successfully served completion via GLM fallback!")
+			return nil
+		}
+		s.log.Printf("[Failover] GLM fallback also failed: %v", err)
 	}
 
 	if err != nil {
