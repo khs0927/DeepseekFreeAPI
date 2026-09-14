@@ -48,7 +48,7 @@ var modelRegistry = []Model{
 	},
 	{
 		ID:             "deepseek-reasoner",
-		Type:           ModelTypeDefault,
+		Type:           ModelTypeExpert,
 		SupportsSearch: true,
 		SupportsThink:  true,
 		DefaultSearch:  false,
@@ -66,7 +66,7 @@ var modelRegistry = []Model{
 	},
 	{
 		ID:             "deepseek-deep-search",
-		Type:           ModelTypeDefault,
+		Type:           ModelTypeExpert,
 		SupportsSearch: true,
 		SupportsThink:  true,
 		DefaultSearch:  true,
